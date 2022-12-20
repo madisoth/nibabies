@@ -478,7 +478,7 @@ tasks and sessions), the following preprocessing was performed.
                     ('outputnode.subject_id', 'inputnode.subject_id'),
                     ('outputnode.t1w2fsnative_xfm', 'inputnode.t1w2fsnative_xfm'),
                     ('outputnode.fsnative2t1w_xfm', 'inputnode.fsnative2t1w_xfm'),
-                    ('outputnode.surfaces', 'inputnode.anat_giftis'),
+                    ('outputnode.anat_ribbon', 'inputnode.anat_ribbon'),
                 ]),
             ])
             # fmt: on
@@ -549,9 +549,6 @@ Setting-up fieldmap "{estimator.bids_id}" ({estimator.method}) with \
                 fmap_wf_inputs = getattr(fmap_wf.inputs, f"in_{estimator.bids_id}")
                 fmap_wf_inputs.in_data = [str(s.path) for s in estimator.sources]
                 fmap_wf_inputs.metadata = [s.metadata for s in estimator.sources]
-
-                flatten = fmap_wf.get_node(f"wf_{estimator.bids_id}.flatten")
-                flatten.inputs.max_trs = config.workflow.topup_max_vols
             else:
                 raise NotImplementedError(
                     "Sophisticated PEPOLAR schemes (e.g., using DWI+EPI) are unsupported."

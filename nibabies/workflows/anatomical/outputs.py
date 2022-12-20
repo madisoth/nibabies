@@ -138,6 +138,8 @@ def init_anat_reports_wf(*, freesurfer, output_dir, sloppy, name="anat_reports_w
         "std_mask",
         "subject_id",
         "subjects_dir",
+        "surfaces",
+        "morphometrics",
     ]
     inputnode = pe.Node(niu.IdentityInterface(fields=inputfields), name="inputnode")
 
@@ -336,8 +338,10 @@ def init_anat_derivatives_wf(
                 "t1w2fsnative_xfm",
                 "fsnative2t1w_xfm",
                 "surfaces",
+                "morphometrics",
                 "t1w_fs_aseg",
                 "t1w_fs_aparc",
+                "anat_ribbon",
             ]
         ),
         name="inputnode",
@@ -352,6 +356,12 @@ def init_anat_derivatives_wf(
         run_without_submitting=True,
     )
     ds_t1w_preproc.inputs.SkullStripped = False
+
+    ds_anat_ribbon = pe.Node(
+        DerivativesDataSink(base_directory=output_dir, suffix="ribbon", compress=True),
+        name="ds_anat_ribbon",
+        run_without_submitting=True,
+    )
 
     ds_t1w_mask = pe.Node(
         DerivativesDataSink(base_directory=output_dir, desc="brain", suffix="mask", compress=True),
@@ -384,6 +394,8 @@ def init_anat_derivatives_wf(
                                   ('source_files', 'source_file')]),
         (inputnode, ds_t1w_dseg, [('t1w_dseg', 'in_file'),
                                   ('source_files', 'source_file')]),
+        (inputnode, ds_anat_ribbon, [('anat_ribbon', 'in_file'),
+                                     ('source_files', 'source_file')]),
         (raw_sources, ds_t1w_mask, [('out', 'RawSources')]),
     ])
     # fmt: on
@@ -636,6 +648,19 @@ def init_anat_derivatives_wf(
         name="ds_surfs",
         run_without_submitting=True,
     )
+    # Morphometrics
+    name_morphs = pe.MapNode(
+        Path2BIDS(),
+        iterfield="in_file",
+        name="name_morphs",
+        run_without_submitting=True,
+    )
+    ds_morphs = pe.MapNode(
+        DerivativesDataSink(base_directory=output_dir, extension=".shape.gii"),
+        iterfield=["in_file", "hemi", "suffix"],
+        name="ds_morphs",
+        run_without_submitting=True,
+    )
     # Parcellations
     ds_t1w_fsaseg = pe.Node(
         DerivativesDataSink(base_directory=output_dir, desc="aseg", suffix="dseg", compress=True),
@@ -663,6 +688,11 @@ def init_anat_derivatives_wf(
                                ('source_files', 'source_file')]),
         (name_surfs, ds_surfs, [('hemi', 'hemi'),
                                 ('suffix', 'suffix')]),
+        (inputnode, name_morphs, [('morphometrics', 'in_file')]),
+        (inputnode, ds_morphs, [('morphometrics', 'in_file'),
+                                ('source_files', 'source_file')]),
+        (name_morphs, ds_morphs, [('hemi', 'hemi'),
+                                  ('suffix', 'suffix')]),
         (inputnode, ds_t1w_fsaseg, [('t1w_fs_aseg', 'in_file'),
                                     ('source_files', 'source_file')]),
         (inputnode, ds_t1w_fsparc, [('t1w_fs_aparc', 'in_file'),

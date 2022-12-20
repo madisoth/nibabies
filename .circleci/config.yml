@@ -64,7 +64,7 @@ _check_skip_job: &check_skip_job
 
 version: 2.1
 orbs:
-  docker: circleci/docker@1.6.0
+  docker: circleci/docker@2.1.4
 
 jobs:
 
@@ -296,6 +296,7 @@ jobs:
       - FS_LICENSE: /tmp/fslicense/license.txt
       - DATASET: bcp
       - CHECK_BCP: true
+      - MIGAS_OPTOUT: "1"
     steps:
       - checkout
       - run: *check_skip_job
@@ -364,7 +365,7 @@ jobs:
             nibabies-wrapper docker /tmp/data/${DATASET} /tmp/${DATASET}/derivatives/nibabies participant \
                 -i nipreps/nibabies:latest \
                 -e NIBABIES_DEV 1 --user $(id -u):$(id -g) \
-                --network none --notrack \
+                --network none \
                 --config $PWD/nipype.cfg -w /tmp/${DATASET}/work \
                 --fs-subjects-dir /tmp/data/${DATASET}/derivatives/infant-freesurfer \
                 --skull-strip-template UNCInfant:cohort-1 \
@@ -379,9 +380,14 @@ jobs:
             mkdir -p /tmp/${DATASET}/test
             CHECK_OUTPUTS_FILE="${DATASET}_full_outputs.txt"
             cd /tmp/${DATASET}/derivatives/nibabies && tree -I 'figures|log' -lifa --noreport | sed s+^\./++ | sed '1d' | sort > /tmp/${DATASET}/test/outputs.out
-            cat /tmp/${DATASET}/test/outputs.out
             diff /tmp/src/nibabies/.circleci/${CHECK_OUTPUTS_FILE} /tmp/${DATASET}/test/outputs.out
             rm -rf /tmp/${DATASET}/test
+            exit $?
+      - run:
+          name: Verify outputs
+          command: |
+            pip install nibabel numpy nitransforms
+            python /tmp/src/nibabies/scripts/check_outputs.py /tmp/${DATASET}/derivatives/nibabies
             exit $?
       - store_artifacts:
           path: /tmp/bcp/derivatives

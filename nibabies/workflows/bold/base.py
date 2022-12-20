@@ -69,7 +69,7 @@ from .resampling import (
     init_bold_surf_wf,
 )
 from .stc import init_bold_stc_wf
-from .t2s import init_bold_t2s_wf
+from .t2s import init_bold_t2s_wf, init_t2s_reporting_wf
 
 
 def init_func_preproc_wf(bold_file, has_fieldmap=False, existing_derivatives=None):
@@ -305,7 +305,6 @@ effects of other kernels [@lanczos].
 Non-gridded (surface) resamplings were performed using `mri_vol2surf` (FreeSurfer)
 """
 
-
     inputnode = pe.Node(
         niu.IdentityInterface(
             fields=[
@@ -321,7 +320,7 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf` (FreeSurfe
                 "anat2std_xfm",
                 "std2anat_xfm",
                 "template",
-                "anat_giftis",
+                "anat_ribbon",
                 # from bold reference workflow
                 "bold_ref",
                 "bold_ref_xfm",
@@ -347,10 +346,9 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf` (FreeSurfe
     outputnode = pe.Node(
         niu.IdentityInterface(
             fields=[
+                "anat2bold_xfm",
                 "bold_anat",
                 "bold_anat_ref",
-                "bold2anat_xfm",
-                "anat2bold_xfm",
                 "bold_mask_anat",
                 "bold_aseg_anat",
                 "bold_aparc_anat",
@@ -364,6 +362,7 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf` (FreeSurfe
                 "bold_mask_native",
                 "bold_echos_native",
                 "bold_cifti",
+                "bold2anat_xfm",
                 "cifti_variant",
                 "cifti_metadata",
                 "cifti_density",
@@ -373,6 +372,10 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf` (FreeSurfe
                 "melodic_mix",
                 "nonaggr_denoised_file",
                 "confounds_metadata",
+                "t2star_bold",
+                "t2star_t1",
+                "t2star_std",
+                "hmc_xforms",
             ]
         ),
         name="outputnode",
@@ -434,6 +437,7 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf` (FreeSurfe
             ('bold_anat_ref', 'inputnode.bold_t1_ref'),
             ('bold2anat_xfm', 'inputnode.bold2anat_xfm'),
             ('anat2bold_xfm', 'inputnode.anat2bold_xfm'),
+            ('hmc_xforms', 'inputnode.hmc_xforms'),
             ('bold_aseg_anat', 'inputnode.bold_aseg_t1'),
             ('bold_aparc_anat', 'inputnode.bold_aparc_t1'),
             ('bold_mask_anat', 'inputnode.bold_mask_t1'),
@@ -450,6 +454,9 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf` (FreeSurfe
             ('cifti_variant', 'inputnode.cifti_variant'),
             ('cifti_metadata', 'inputnode.cifti_metadata'),
             ('cifti_density', 'inputnode.cifti_density'),
+            ('t2star_bold', 'inputnode.t2star_bold'),
+            ('t2star_t1', 'inputnode.t2star_t1'),
+            ('t2star_std', 'inputnode.t2star_std'),
             ('confounds_metadata', 'inputnode.confounds_metadata'),
             ('acompcor_masks', 'inputnode.acompcor_masks'),
             ('tcompcor_mask', 'inputnode.tcompcor_mask'),
@@ -548,8 +555,31 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf` (FreeSurfe
             name="bold_t2smap_wf",
         )
 
+        t2s_reporting_wf = init_t2s_reporting_wf()
+
+        ds_report_t2scomp = pe.Node(
+            DerivativesDataSink(
+                desc="t2scomp",
+                datatype="figures",
+                dismiss_entities=("echo",),
+            ),
+            name="ds_report_t2scomp",
+            run_without_submitting=True,
+        )
+
+        ds_report_t2star_hist = pe.Node(
+            DerivativesDataSink(
+                desc="t2starhist",
+                datatype="figures",
+                dismiss_entities=("echo",),
+            ),
+            name="ds_report_t2star_hist",
+            run_without_submitting=True,
+        )
+
     bold_final = pe.Node(
-        niu.IdentityInterface(fields=["bold", "boldref", "mask", "bold_echos"]), name="bold_final"
+        niu.IdentityInterface(fields=["bold", "boldref", "mask", "bold_echos", "t2star"]),
+        name="bold_final",
     )
 
     # Mask input BOLD reference image
@@ -581,15 +611,19 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf` (FreeSurfe
             ('bold_ref', 'inputnode.raw_ref_image')]),
         (validate_bolds, bold_hmc_wf, [
             (("out_file", pop_file), 'inputnode.bold_file')]),
+        (bold_hmc_wf, outputnode, [
+            ("outputnode.xforms", "hmc_xforms"),
+        ]),
         # Native-space BOLD files
         (final_boldref_wf, final_boldref_mask, [('outputnode.epi_ref_file', 'in_file')]),
         (final_boldref_wf, bold_final, [('outputnode.epi_ref_file', 'boldref')]),
-        (final_boldref_mask, bold_final, [('out_file', 'mask')]),
+        (final_boldref_mask, bold_final, [('out_mask', 'mask')]),
         (bold_final, outputnode, [
             ('bold', 'bold_native'),
             ('boldref', 'bold_native_ref'),
             ('mask', 'bold_mask_native'),
             ('bold_echos', 'bold_echos_native'),
+            ('t2star', 't2star_bold'),
         ]),
         # EPI-T1 registration workflow
         (inputnode, bold_reg_wf, [
@@ -669,15 +703,22 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf` (FreeSurfe
         workflow.connect([
             # update name source for optimal combination
             (inputnode, func_derivatives_wf, [
-                (('bold_file', combine_meepi_source), 'inputnode.source_file')]),
-            (join_echos, bold_t2s_wf, [
-                ('bold_files', 'inputnode.bold_file')]),
-            (bold_t2s_wf, split_opt_comb, [
-                ('outputnode.bold', 'in_file')]),
-            (split_opt_comb, bold_t1_trans_wf, [
-                ("out_files", "inputnode.bold_split")]),
+                (("bold_file", combine_meepi_source), "inputnode.source_file"),
+            ]),
+            (join_echos, bold_t2s_wf, [("bold_files", "inputnode.bold_file")]),
             (join_echos, bold_final, [("bold_files", "bold_echos")]),
-            (bold_t2s_wf, bold_final, [("outputnode.bold", "bold")]),
+            (bold_t2s_wf, split_opt_comb, [("outputnode.bold", "in_file")]),
+            (split_opt_comb, bold_t1_trans_wf, [("out_files", "inputnode.bold_split")]),
+            (bold_t2s_wf, bold_final, [("outputnode.bold", "bold"),
+                                       ("outputnode.t2star_map", "t2star")]),
+            (inputnode, t2s_reporting_wf, [("anat_dseg", "inputnode.label_file")]),
+            (bold_reg_wf, t2s_reporting_wf, [
+                ("outputnode.itk_t1_to_bold", "inputnode.label_bold_xform")
+            ]),
+            (bold_final, t2s_reporting_wf, [("t2star", "inputnode.t2star_file"),
+                                            ("boldref", "inputnode.boldref")]),
+            (t2s_reporting_wf, ds_report_t2scomp, [('outputnode.t2s_comp_report', 'in_file')]),
+            (t2s_reporting_wf, ds_report_t2star_hist, [("outputnode.t2star_hist", "in_file")]),
         ])
         # fmt:on
 
@@ -705,6 +746,23 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf` (FreeSurfe
         ])
         # fmt:on
 
+        if multiecho:
+            t2star_to_t1w = pe.Node(
+                ApplyTransforms(interpolation="LanczosWindowedSinc", float=True),
+                name="t2star_to_t1w",
+                mem_gb=0.1,
+            )
+            # fmt:off
+            workflow.connect([
+                (bold_reg_wf, t2star_to_t1w, [("outputnode.itk_bold_to_t1", "transforms")]),
+                (bold_t1_trans_wf, t2star_to_t1w, [
+                    ("outputnode.bold_mask_t1", "reference_image")
+                ]),
+                (bold_final, t2star_to_t1w, [("t2star", "input_image")]),
+                (t2star_to_t1w, outputnode, [("output_image", "t2star_t1")]),
+            ])
+            # fmt:on
+
     if spaces.get_spaces(nonstandard=False, dim=(3,)):
         # Apply transforms in 1 shot
         # Only use uncompressed output if AROMA is to be run
@@ -713,6 +771,7 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf` (FreeSurfe
             mem_gb=mem_gb["resampled"],
             omp_nthreads=omp_nthreads,
             spaces=spaces,
+            multiecho=multiecho,
             name="bold_std_trans_wf",
             use_compression=not config.execution.low_mem,
         )
@@ -728,6 +787,7 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf` (FreeSurfe
                 ('anat_aparc', 'inputnode.bold_aparc')]),
             (bold_final, bold_std_trans_wf, [
                 ('mask', 'inputnode.bold_mask'),
+                ('t2star', 'inputnode.t2star'),
             ]),
             (bold_reg_wf, bold_std_trans_wf, [
                 ('outputnode.itk_bold_to_t1', 'inputnode.itk_bold_to_t1')]),
@@ -762,8 +822,8 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf` (FreeSurfe
         else:
             # fmt:off
             workflow.connect([
-                (split_opt_comb, bold_std_trans_wf, [
-                    ('out_files', 'inputnode.bold_split')])
+                (split_opt_comb, bold_std_trans_wf, [('out_files', 'inputnode.bold_split')]),
+                (bold_std_trans_wf, outputnode, [("outputnode.t2star_std", "t2star_std")]),
             ])
             # fmt:on
 
@@ -861,7 +921,7 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf` (FreeSurfe
                 ('subjects_dir', 'inputnode.subjects_dir'),
                 ('subject_id', 'inputnode.subject_id'),
                 ('t1w2fsnative_xfm', 'inputnode.t1w2fsnative_xfm'),
-                ("anat_giftis", "inputnode.anat_giftis"),
+                ("anat_ribbon", "inputnode.anat_ribbon"),
                 ("anat_mask", "inputnode.t1w_mask")]),
             (bold_t1_trans_wf, bold_surf_wf, [('outputnode.bold_t1', 'inputnode.source_file')]),
             (bold_surf_wf, outputnode, [('outputnode.surfaces', 'surfaces')]),
@@ -1003,7 +1063,7 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf` (FreeSurfe
         ] if not multiecho else [
             (inputnode, initial_boldref_mask, [('bold_ref', 'in_file')]),
             (initial_boldref_mask, bold_t2s_wf, [
-                ("out_file", "inputnode.bold_mask"),
+                ("out_mask", "inputnode.bold_mask"),
             ]),
             (bold_bold_trans_wf, join_echos, [
                 ("outputnode.bold", "bold_files"),
@@ -1079,7 +1139,7 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf` (FreeSurfe
         (inputnode, coeff2epi_wf, [
             ("bold_ref", "inputnode.target_ref")]),
         (initial_boldref_mask, coeff2epi_wf, [
-            ("out_file", "inputnode.target_mask")]),  # skull-stripped brain
+            ("out_mask", "inputnode.target_mask")]),  # skull-stripped brain
         (coeff2epi_wf, unwarp_wf, [
             ("outputnode.fmap_coeff", "inputnode.fmap_coeff")]),
         (inputnode, sdc_report, [("bold_ref", "before")]),
@@ -1088,7 +1148,7 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf` (FreeSurfe
         (bold_split, unwarp_wf, [
             ("out_files", "inputnode.distorted")]),
         (final_boldref_wf, sdc_report, [("outputnode.epi_ref_file", "after")]),
-        (final_boldref_mask, sdc_report, [("out_file", "wm_seg")]),
+        (final_boldref_mask, sdc_report, [("out_mask", "wm_seg")]),
         (inputnode, ds_report_sdc, [("bold_file", "source_file")]),
         (sdc_report, ds_report_sdc, [("out_report", "in_file")]),
 
@@ -1154,7 +1214,7 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf` (FreeSurfe
         ]),
         # remaining workflow connections
         (join_sdc_echos, final_boldref_wf, [
-            ("corrected", "inputnode.bold_file"),
+            ("corrected", "inputnode.in_files"),
         ]),
         (join_sdc_echos, bold_t2s_wf, [
             (("corrected_mask", pop_file), "inputnode.bold_mask"),
