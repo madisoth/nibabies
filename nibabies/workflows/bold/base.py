@@ -422,6 +422,7 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf` (FreeSurfe
         bids_root=layout.root,
         cifti_output=config.workflow.cifti_output,
         freesurfer=freesurfer,
+        project_goodvoxels=config.workflow.project_goodvoxels,
         all_metadata=all_metadata,
         multiecho=multiecho,
         output_dir=nibabies_dir,
