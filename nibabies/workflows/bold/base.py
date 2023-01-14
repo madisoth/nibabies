@@ -927,6 +927,8 @@ Non-gridded (surface) resamplings were performed using `mri_vol2surf` (FreeSurfe
             (bold_surf_wf, outputnode, [('outputnode.surfaces', 'surfaces')]),
             (bold_surf_wf, func_derivatives_wf, [
                 ('outputnode.target', 'inputnode.surf_refs')]),
+            (bold_surf_wf, func_derivatives_wf, [("outputnode.goodvoxels_ribbon",
+                                                  "inputnode.goodvoxels_ribbon")]),
         ])
         # fmt:on
 
