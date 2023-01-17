@@ -796,7 +796,7 @@ def init_func_derivatives_wf(
             ),
             name='ds_goodvoxels_ribbon',
             run_without_submitting=True,
-            mem_gb=DEFAULT_MEMORY_MIN_GB,
+            mem_gb=config.DEFAULT_MEMORY_MIN_GB,
         )
         # fmt:off
         workflow.connect([
