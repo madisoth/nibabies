@@ -21,7 +21,7 @@ class MetricDilateInputSpec(CommandLineInputSpec):
         desc="the metric to dilate",
     )
 
-    surface = File(
+    surf_file = File(
         exists=True,
         mandatory=True,
         argstr="%s ",
@@ -45,13 +45,13 @@ class MetricDilateInputSpec(CommandLineInputSpec):
         desc="output - the output metric",
     )
 
-    bad_vertex_roi = File(
+    bad_vertex_roi_file = File(
         argstr="-bad-vertex-roi %s ",
         position=4,
         desc="metric file, positive values denote vertices to have their values replaced",
     )
 
-    data_roi = File(
+    data_roi_file = File(
         argstr="-data-roi %s ",
         position=5,
         desc="metric file, positive values denote vertices that have data",

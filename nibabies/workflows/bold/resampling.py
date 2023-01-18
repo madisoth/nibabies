@@ -169,11 +169,11 @@ surface projection.
             distance=10,
             nearest=True,
         ),
-        iterfield=["in_file", "surface"],
+        iterfield=["in_file", "surf_file"],
         name="metric_dilate",
         mem_gb=mem_gb * 3,
     )
-    metric_dilate.inputs.surface = [
+    metric_dilate.inputs.surf_file = [
         str(
             tf.get(
                 "fsaverage",
